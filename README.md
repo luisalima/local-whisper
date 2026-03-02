@@ -90,7 +90,7 @@ Right Option (hold/release via Karabiner)
 
 ## Troubleshooting
 
-- **No transcription output**: Check `/tmp/whisper-dictate.log` for errors
+- **No transcription output**: Check `$TMPDIR/whisper-dictate/whisper-dictate.log` for errors (run `echo $TMPDIR` to find the path)
 - **Wrong microphone**: Run `ffmpeg -f avfoundation -list_devices true -i ""` and update `config.sh`
 - **`hs` command not found**: Run `hs.ipc.cliInstall()` in Hammerspoon console
 - **Permissions errors**: Ensure all permissions are granted in System Settings (see table above)

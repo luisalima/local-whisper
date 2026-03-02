@@ -1,0 +1,37 @@
+{
+    "title": "local-whisper: Right Option hold-to-dictate",
+    "rules": [
+        {
+            "description": "Right Option: hold = record + transcribe, tap = normal right_option",
+            "manipulators": [
+                {
+                    "type": "basic",
+                    "from": {
+                        "key_code": "right_option",
+                        "modifiers": {
+                            "optional": ["any"]
+                        }
+                    },
+                    "to": [
+                        {
+                            "shell_command": "/bin/bash -lc '$HOME/whisper-dictate/start_record.sh >> /tmp/whisper-dictate.log 2>&1'"
+                        }
+                    ],
+                    "to_if_alone": [
+                        {
+                            "key_code": "right_option"
+                        }
+                    ],
+                    "to_after_key_up": [
+                        {
+                            "shell_command": "/bin/bash -lc '$HOME/whisper-dictate/stop_transcribe.sh >> /tmp/whisper-dictate.log 2>&1'"
+                        }
+                    ],
+                    "parameters": {
+                        "basic.to_if_alone_timeout_milliseconds": 200
+                    }
+                }
+            ]
+        }
+    ]
+}

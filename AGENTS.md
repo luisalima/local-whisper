@@ -21,10 +21,11 @@ Karabiner (Right Option hold/release)
 - `~/.hammerspoon/init.lua` — overlay + insertion + hotkeys
 - `~/whisper.cpp/build/bin/whisper-cli` — transcription binary
 - `~/whisper.cpp/models/ggml-medium.bin` — model
-- `/tmp/whisper_chunks/` — recording segments (ephemeral)
-- `/tmp/whisper_partial.txt` — live partial transcript
-- `/tmp/whisper_final.txt` — final transcript
-- `/tmp/whisper_recording.pid` — ffmpeg PID lock
+- `$TMPDIR/whisper-dictate/` — all temp state (per-user private dir on macOS)
+- `$TMPDIR/whisper-dictate/chunks/` — recording segments (ephemeral)
+- `$TMPDIR/whisper-dictate/partial.txt` — live partial transcript
+- `$TMPDIR/whisper-dictate/final.txt` — final transcript
+- `$TMPDIR/whisper-dictate/recording.pid` — ffmpeg PID lock
 - `~/.whisper_dictation_lang` — language state (en|pt|auto)
 - `~/.whisper_dictation_output` — output mode (paste|type)
 
@@ -32,7 +33,7 @@ Karabiner (Right Option hold/release)
 
 - Bash scripts: use `set -euo pipefail`, source `config.sh` for shared vars
 - All paths in scripts should be absolute (Karabiner runs in minimal env)
-- Log to `/tmp/whisper-dictate.log` for debugging
+- Log to `$TMPDIR/whisper-dictate/whisper-dictate.log` for debugging
 - Hammerspoon API: use `hs.canvas` for overlay, `hs.eventtap` for typing, `hs.pasteboard` for paste mode
 - Signal between bash and Hammerspoon via `hs -c "FunctionName()"`
 - whisper.cpp binary is `whisper-cli`, NOT `main`
@@ -48,6 +49,7 @@ Karabiner (Right Option hold/release)
 ## Workflow
 
 - **Create a bd issue before starting any work**
+- **Always verify work before closing an issue** — run the code, check the output, confirm it does what the issue asks
 - Check `bd ready` for unblocked work
 - `bd create "Title" -t task -p 2` to file new work
 - `bd close <id>` when done
