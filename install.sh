@@ -69,6 +69,9 @@ for formula in "${BREW_FORMULAE[@]}"; do
 done
 
 BREW_CASKS=(karabiner-elements hammerspoon)
+# Heads up: Karabiner-Elements installs a system-level keyboard daemon
+# and will prompt for your macOS password during install. This is normal.
+warn "Karabiner-Elements may ask for your macOS password (it installs a system keyboard daemon)"
 for cask in "${BREW_CASKS[@]}"; do
     if brew list --cask "$cask" &>/dev/null; then
         ok "$cask already installed"
