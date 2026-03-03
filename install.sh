@@ -151,29 +151,17 @@ for script in config.sh start_record.sh stop_transcribe.sh partial_transcribe.sh
     fi
 done
 
-# ─── Auto-detect audio device ───────────────────────────────────────────────
+# ─── Audio device ────────────────────────────────────────────────────────────
 echo ""
-info "Detecting audio input devices..."
-echo ""
+ok "Audio device set to system default (follows System Settings > Sound > Input)"
+info "Available devices on this machine:"
 
 FFMPEG_BIN="$(brew --prefix)/bin/ffmpeg"
-# Capture device list
 DEVICE_LIST=$("$FFMPEG_BIN" -f avfoundation -list_devices true -i "" 2>&1 || true)
-
-# Show audio devices
 echo "$DEVICE_LIST" | grep -A 100 "AVFoundation audio devices:" | grep -E "^\[AVFoundation" | head -10
 
 echo ""
-echo -e "${YELLOW}Which audio device index should be used for the microphone?${NC}"
-echo -e "  (Usually ${BOLD}0${NC} for the built-in mic, or check the list above)"
-read -r -p "Audio device index [0]: " AUDIO_INDEX
-AUDIO_INDEX="${AUDIO_INDEX:-0}"
-
-# Update config.sh with correct device
-if [[ -f "$WHISPER_DICTATE_DIR/config.sh" ]]; then
-    sed -i '' "s|AUDIO_DEVICE=\":.*\"|AUDIO_DEVICE=\":${AUDIO_INDEX}\"|" "$WHISPER_DICTATE_DIR/config.sh"
-    ok "Audio device set to :${AUDIO_INDEX}"
-fi
+info "To pin a specific device, edit ~/whisper-dictate/config.sh and change AUDIO_DEVICE"
 
 # ─── Update paths in config.sh ──────────────────────────────────────────────
 # Ensure whisper binary and model paths match this system

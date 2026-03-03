@@ -12,9 +12,10 @@ FFMPEG="/opt/homebrew/bin/ffmpeg"
 HS="/usr/local/bin/hs"
 
 # --- Audio device ---
-# Find yours: ffmpeg -f avfoundation -list_devices true -i ""
-# Format: ":<index>" for audio-only (e.g., ":0" = first mic)
-AUDIO_DEVICE=":0"
+# ":default" = system default mic (follows System Settings selection)
+# To pin a specific device: ":0", ":1", etc.
+# List devices: ffmpeg -f avfoundation -list_devices true -i ""
+AUDIO_DEVICE=":default"
 
 # --- Temp directory (macOS $TMPDIR is per-user, mode 700 — no symlink attacks) ---
 WHISPER_TMP="${TMPDIR:-/tmp}/whisper-dictate"
