@@ -21,6 +21,25 @@ local function dailyFile(name)
     return string.format("%s/%s-%s.md", NOTES_ROOT, name, os.date("%Y-%m-%d"))
 end
 
+local function normalizeCommandText(text)
+    local normalized = (text or ""):gsub("%s+", " ")
+    normalized = normalized:gsub("^%s+", ""):gsub("%s+$", "")
+    return normalized
+end
+
+local function parseOpenAppCommand(text)
+    local normalized = normalizeCommandText(text)
+    local lower = normalized:lower()
+    local appName = lower:match("^open%s+app%s+(.+)$")
+    if not appName then return nil end
+
+    -- Keep original app casing by slicing from normalized text
+    local originalAppName = normalized:sub(#normalized - #appName + 1)
+    originalAppName = originalAppName:gsub("[%.%,%!%?;:%s]+$", "")
+    if originalAppName == "" then return nil end
+    return originalAppName
+end
+
 return {
     beforeInsert = function(ctx)
         local note = ctx.text:match("^note:%s*(.+)$")
@@ -39,7 +58,7 @@ return {
             return
         end
 
-        local appName = ctx.text:match("^open%s+(.+)$")
+        local appName = parseOpenAppCommand(ctx.text)
         if appName then
             ctx:launchApp(appName)
             ctx:disableInsert()

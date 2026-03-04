@@ -133,7 +133,7 @@ Example voice commands you can wire in your hook file:
 
 - `note: buy coffee` -> append to notes file, skip cursor insertion
 - `journal: today was productive` -> append to journal file
-- `open Safari` -> launch/focus an app
+- `open app Safari` -> launch/focus an app
 - `rewrite: ...` -> rewrite text via a local LLM CLI, then insert rewritten text
 
 ## How it works
