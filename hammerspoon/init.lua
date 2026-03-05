@@ -822,6 +822,8 @@ local function buildMenuBarMenu()
 end
 
 local function createMenuBar()
+    -- Clean up previous instance on reload
+    if menuBar then menuBar:delete(); menuBar = nil end
     menuBar = hs.menubar.new()
     if not menuBar then return end
     updateMenuBar()
