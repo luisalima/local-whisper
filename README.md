@@ -7,18 +7,36 @@ Hold **Right Cmd**, speak, release — text appears at your cursor.
 ## Features
 
 - **Hold-to-dictate**: Hold a modifier key to record, release to transcribe and insert
+- **Voice commands**: Say "voice command note buy coffee" to save a note, "voice command open app Safari" to launch apps, and more — fully customizable
 - **Live preview**: Streaming overlay shows partial transcription while you speak
 - **Recording indicator**: Pulsing red dot and elapsed timer in the overlay
-- **Insert at cursor**: Final text is pasted (or typed) into any app on release
 - **Multi-language**: English, Portuguese, and auto-detect with preferred language fallback
+- **App-aware processing**: Auto-capitalizes in most apps, skips in terminals and code editors
+- **Text post-processing**: Remove filler words (um, uh, hmm), clean whitespace
 - **Custom vocabulary**: Provide a prompt file to improve recognition of domain-specific terms
-- **Text post-processing**: Auto-capitalize, remove filler words (um, uh, hmm), clean whitespace
-- **App-aware processing**: Skips auto-capitalize in terminals and code editors
-- **Action hooks**: Route dictation to notes, launch apps, or pipe to local LLM commands
 - **Auto-stop on silence**: Automatically stops recording after 3 seconds of silence
-- **Undo**: Ctrl+Alt+Z to undo the last dictation
-- **Menu bar icon**: Shows recording status, click for quick settings access
+- **Menu bar**: Waveform icon shows recording status (turns red), click for settings and recent dictations
+- **Recent dictations**: View and re-paste your last 10 dictations from the menu bar
 - **Fully local**: All processing on-device via whisper.cpp — nothing leaves your machine
+
+## Voice Commands
+
+Voice commands turn dictation into actions. All commands start with **"voice command"** to prevent false matches on normal speech.
+
+| Say | What happens |
+|-----|-------------|
+| "voice command note buy coffee" | Saves to `~/whisper_notes.md` |
+| "voice command remind call mom" | Creates a Reminder in the Reminders app |
+| "voice command open app Safari" | Launches or focuses an app |
+| "voice command copy" | Fires Cmd+C |
+| "voice command paste" | Fires Cmd+V |
+| "voice command select all" | Fires Cmd+A |
+| "voice command undo" | Fires Cmd+Z |
+| "voice command cancel" | Discards the current dictation (works mid-sentence) |
+
+Voice commands are fully customizable — edit `~/.hammerspoon/local_whisper_actions.lua` to add your own. The config auto-reloads when you save.
+
+For a full guide on writing custom commands, see **[docs/VOICE_COMMANDS.md](docs/VOICE_COMMANDS.md)**.
 
 ## Requirements
 
@@ -28,9 +46,7 @@ Hold **Right Cmd**, speak, release — text appears at your cursor.
 ## Install
 
 ```bash
-git clone https://github.com/luisalima/local-whisper.git
-cd local-whisper
-./install.sh
+git clone https://github.com/luisalima/local-whisper.git && cd local-whisper && ./install.sh
 ```
 
 The installer handles everything: Homebrew dependencies, building whisper.cpp, downloading models, and setting up Hammerspoon. It then runs `setup.sh` which walks you through choosing your trigger key, microphone, and granting permissions.
@@ -105,42 +121,28 @@ ffmpeg -f avfoundation -list_devices true -i ""
 
 Update `AUDIO_DEVICE` in `~/.hammerspoon/init.lua` if it's not `:1`.
 
-## Hotkeys
-
-| Shortcut | Action |
-|----------|--------|
-| Hold Right Cmd | Record, transcribe, insert |
-| Ctrl+Alt+E | Set language: English |
-| Ctrl+Alt+P | Set language: Portuguese |
-| Ctrl+Alt+A | Set language: Auto-detect |
-| Ctrl+Alt+T | Cycle languages |
-| Ctrl+Alt+M | Cycle whisper model |
-| Ctrl+Alt+O | Toggle output mode (paste / type) |
-| Ctrl+Alt+Return | Toggle enter-after-insert mode |
-| Ctrl+Alt+S | Toggle settings overlay |
-| Ctrl+Alt+Z | Undo last dictation |
-| Ctrl+Alt+R | Reload action hooks config |
-| Ctrl+Alt+X | Emergency stop |
-
 ## Menu bar
 
-A persistent menu bar icon (🎙) shows recording status (turns red ● when recording). Click it to:
+A waveform icon in the menu bar shows recording status (turns red when recording). Click it to:
 
-- See current language, model, output mode, enter mode, and preferred languages
+- See current language, model, output mode, and enter mode
 - Click any setting to cycle it
+- View and re-paste recent dictations
 - Open the settings overlay
-- Reload action hooks
+- Reload voice commands
 - Emergency stop
+
+All settings are accessible from the menu bar — no keyboard shortcuts needed.
 
 ## Custom vocabulary prompt
 
 Create `~/.local-whisper/prompt` with terms whisper should recognize better:
 
 ```
-Claude, Hammerspoon, whisper.cpp, Karabiner, ffmpeg, macOS, Lua, Anthropic
+Claude, Hammerspoon, whisper.cpp, ffmpeg, macOS, Lua, Anthropic
 ```
 
-This is passed as `--prompt` to whisper-cli for both partial and final transcription.
+This is passed as `--prompt` to whisper-cli for both partial and final transcription. Adding your voice command trigger words here improves recognition.
 
 ## Faster live preview
 
@@ -161,20 +163,23 @@ Post-processing adapts to the frontmost application when you start recording:
 - **Code editors** (VS Code, Xcode, Zed, Sublime Text): skips auto-capitalize
 - **Everything else**: auto-capitalizes first letter, removes filler words
 
-The active app is also available in action hooks as `ctx.appName` and `ctx.appBundleID`.
+The active app is also available in voice command hooks as `ctx.appName` and `ctx.appBundleID`.
 
-## Custom post-dictation actions
+## Writing custom voice commands
 
-You can hook custom logic after transcription to trigger automations, route text to files, launch apps, or pipe to a local LLM.
+Edit `~/.hammerspoon/local_whisper_actions.lua` to add your own commands. The file returns a table with hooks that run on each dictation:
 
-1. Copy the example file:
-
-```bash
-cp hammerspoon/local_whisper_actions.example.lua ~/.hammerspoon/local_whisper_actions.lua
+```lua
+return {
+    beforeInsert = function(ctx)
+        -- Match and handle commands here
+    end,
+    actions = { },
+    afterInsert = function(ctx)
+        -- Post-insertion logic (logging, etc.)
+    end,
+}
 ```
-
-2. Edit `~/.hammerspoon/local_whisper_actions.lua` and customize your rules.
-3. The config auto-reloads when the file changes (or use Ctrl+Alt+R to force reload).
 
 ### Hook context
 
@@ -183,8 +188,6 @@ cp hammerspoon/local_whisper_actions.example.lua ~/.hammerspoon/local_whisper_ac
 | `ctx.text` | Current text (mutable via `ctx:setText()`) |
 | `ctx.textLower` | Lowercase version for case-insensitive matching |
 | `ctx.originalText` | Original transcription (immutable) |
-| `ctx.lang` | Language used for transcription |
-| `ctx.outputMode` | "paste" or "type" |
 | `ctx.appName` | App name where dictation started (e.g. "Safari") |
 | `ctx.appBundleID` | Bundle ID (e.g. "com.apple.Safari") |
 | `ctx:setText(text)` | Replace text before insertion |
@@ -196,16 +199,7 @@ cp hammerspoon/local_whisper_actions.example.lua ~/.hammerspoon/local_whisper_ac
 | `ctx:notify("msg")` | Show a notification |
 | `ctx.handled` | Set to `true` to skip remaining actions |
 
-### Example voice commands
-
-- `note: buy coffee` — append to daily notes file, skip insertion
-- `journal: today was productive` — append to daily journal
-- `open app Safari` — launch or focus an app
-- `todo: call mom` — append to daily tasks file
-
-Patterns in `actions[].pattern` match against `ctx.textLower` (case-insensitive), so "Note: Buy coffee" matches `^note:`.
-
-For a full guide on designing trigger phrases, writing custom commands, and testing — see **[docs/VOICE_COMMANDS.md](docs/VOICE_COMMANDS.md)**.
+The config auto-reloads when you save the file. For more patterns and examples, see **[docs/VOICE_COMMANDS.md](docs/VOICE_COMMANDS.md)**.
 
 ## How it works
 
@@ -215,7 +209,7 @@ Modifier key hold/release (detected by Hammerspoon eventtap)
   → Partial transcription loop: concat latest chunks → whisper-cli (tiny model)
   → On release: concat all chunks → final whisper-cli transcription (chosen model)
   → Post-processing: remove fillers, capitalize, app-aware adjustments
-  → Action hooks: beforeInsert → actions → text insertion → afterInsert
+  → Voice command hooks: beforeInsert → actions → text insertion → afterInsert
   → Text inserted at cursor via paste (Cmd+V) or keystroke
 ```
 
@@ -234,7 +228,7 @@ local AUTO_STOP_THRESHOLD_DB = -40
 - **Wrong microphone**: Run `ffmpeg -f avfoundation -list_devices true -i ""` and update `AUDIO_DEVICE` in init.lua
 - **`hs` command not found**: Run `hs.ipc.cliInstall()` in Hammerspoon console
 - **Permissions errors**: Ensure Hammerspoon has Accessibility and Microphone permissions in System Settings
-- **Action hooks not loading**: Check the log file for "actions:" messages. Ensure `~/.hammerspoon/local_whisper_actions.lua` returns a table.
+- **Voice commands not triggering**: Check the log to see what whisper transcribed — add command words to `~/.local-whisper/prompt`
 - **Overlay not appearing**: Hammerspoon may need Accessibility permission re-granted after updates
 
 ## Disclaimer
