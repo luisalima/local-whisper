@@ -82,7 +82,7 @@ local REFINE_PROMPT_FILE = CONFIG_DIR .. "/refine_prompt"
 local REFINE_MODEL_FILE = CONFIG_DIR .. "/refine_model"
 local REFINE_DEFAULT_MODEL = "llama3.1:8b"
 local REFINE_MIN_CHARS = 50  -- skip refinement for short text
-local REFINE_DEFAULT_PROMPT = "Clean up this dictated speech for insertion as text. Fix punctuation and capitalization. Remove filler words (um, uh, like, you know, so, well, I mean). If the text contains a numbered list or sequential items (first/second/third, one/two/three, 1/2/3), format each item on its own line as a numbered list (1. item\\n2. item\\n3. item). Do NOT add any commentary, explanation, or preamble. Output ONLY the cleaned text, nothing else."
+local REFINE_DEFAULT_PROMPT = "You are a text cleanup tool. Your ONLY job is to output the cleaned version of the input text. Rules: fix punctuation and capitalization, remove filler words (um, uh, like, you know, so, well, I mean), format numbered lists with newlines. NEVER start with phrases like 'Here is', 'Here's', 'The cleaned text', 'Sure', etc. Just output the text directly. Nothing before it, nothing after it."
 
 local function getRefineModel()
     local f = io.open(REFINE_MODEL_FILE, "r")
@@ -294,6 +294,12 @@ local function refineWithOllama(text, callback)
             local ok, result = pcall(hs.json.decode, stdout)
             if ok and result and result.response then
                 local refined = result.response:gsub("^%s+", ""):gsub("%s+$", "")
+                -- Strip common LLM preamble
+                refined = refined:gsub("^[Hh]ere%s+is%s+the%s+cleaned%s+text:%s*\n?", "")
+                refined = refined:gsub("^[Hh]ere'?s?%s+the%s+cleaned[%-]?%s*text:%s*\n?", "")
+                refined = refined:gsub("^[Hh]ere%s+is%s+the%s+refined%s+text:%s*\n?", "")
+                refined = refined:gsub("^[Ss]ure[,!]?%s*[Hh]?e?r?e?'?s?%s*t?h?e?%s*", "")
+                refined = refined:gsub("^%s+", "")
                 if refined ~= "" then
                     log("refine: success (" .. #refined .. " chars)")
                     callback(refined)
