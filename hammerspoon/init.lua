@@ -752,10 +752,14 @@ local function createOverlay()
     overlay:canvasMouseEvents(true, true, true, false)  -- mouseDown + mouseUp + enterExit
     overlay:mouseCallback(function(canvas, event, id, mx, my)
         -- Close button — deferred to avoid deleting canvas inside its own callback
-        if id == "close" and event == "mouseUp" then
-            hs.timer.doAfter(0.01, function()
-                if isRecording then emergencyStop() else forceHideOverlay() end
-            end)
+        if id == "close" and (event == "mouseUp" or event == "mouseDown") then
+            log("overlay: X clicked (" .. event .. ")")
+            if event == "mouseUp" then
+                hs.timer.doAfter(0.01, function()
+                    log("overlay: X executing close")
+                    if isRecording then emergencyStop() else forceHideOverlay() end
+                end)
+            end
             return
         end
 
@@ -1254,8 +1258,11 @@ local function insertTranscribedText(text, detectedLang)
     text = postProcess(text, capturedAppBundleID)
     if text == "" then hideOverlay(); return end
 
-    -- Optional LLM refinement (async, skips short text)
-    if getRefineMode() and #text >= REFINE_MIN_CHARS then
+    -- Skip LLM refinement for voice commands (refine would strip the prefix)
+    local isVoiceCommand = text:lower():match("voice%s+command")
+
+    -- Optional LLM refinement (async, skips short text and voice commands)
+    if not isVoiceCommand and getRefineMode() and #text >= REFINE_MIN_CHARS then
         setOverlayText("Refining...")
         refineWithOllama(text, function(refined)
             finishInsertion(refined, detectedLang)
