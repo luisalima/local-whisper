@@ -511,7 +511,7 @@ local btnColor = { red = 0.5, green = 0.8, blue = 1.0, alpha = 1.0 }
 local btnHover = { red = 0.7, green = 0.9, blue = 1.0, alpha = 1.0 }
 
 -- Element indices: 1=bg, 2=lang, 3=sep1, 4=output, 5=sep2, 6=enter, 7=sep3, 8=model, 9=close, 10=text, 11=dot, 12=timer
-local EL = { lang = 2, output = 4, enter = 6, model = 8, close = 9, text = 10, dot = 11, timer = 12 }
+local EL = { lang = 2, output = 4, enter = 6, model = 8, text = 9, dot = 10, timer = 11, close = 12 }
 
 local enterOnColor = { red = 0.3, green = 1.0, blue = 0.3, alpha = 1.0 }
 local enterOffColor = { red = 0.5, green = 0.5, blue = 0.5, alpha = 0.5 }
@@ -593,28 +593,20 @@ local function createOverlay()
         frame = { x = "36%", y = "6%", w = "50%", h = "25%" },
         trackMouseUp = true, trackMouseEnterExit = true,
     })
-    -- 9: Close button (X)
-    overlay:appendElements({
-        id = "close", type = "text", text = "✕",
-        textColor = { red = 1, green = 1, blue = 1, alpha = 0.5 },
-        textSize = 14, textAlignment = "right",
-        frame = { x = "88%", y = "4%", w = "10%", h = "25%" },
-        trackMouseUp = true, trackMouseEnterExit = true,
-    })
-    -- 10: Transcript text
+    -- 9: Transcript text
     overlay:appendElements({
         id = "text", type = "text", text = "Listening...",
         textColor = { red = 1, green = 1, blue = 1, alpha = 1.0 },
         textSize = 14,
         frame = { x = "5%", y = "35%", w = "90%", h = "60%" },
     })
-    -- 11: Recording indicator (pulsing red dot)
+    -- 10: Recording indicator (pulsing red dot)
     overlay:appendElements({
         id = "dot", type = "oval", action = "fill",
         fillColor = { red = 1, green = 0.15, blue = 0.15, alpha = 0.0 },
         frame = { x = "89%", y = "8%", w = "3%", h = "12%" },
     })
-    -- 12: Elapsed time display
+    -- 11: Elapsed time display
     overlay:appendElements({
         id = "timer", type = "text", text = "",
         textColor = { red = 1, green = 0.4, blue = 0.4, alpha = 0.0 },
@@ -622,16 +614,32 @@ local function createOverlay()
         frame = { x = "75%", y = "8%", w = "14%", h = "20%" },
         textAlignment = "right",
     })
+    -- 12: Close button (X) — last element so it's on top and clickable
+    overlay:appendElements({
+        id = "close", type = "text", text = "✕",
+        textColor = { red = 1, green = 0.4, blue = 0.4, alpha = 0.8 },
+        textSize = 16, textAlignment = "center",
+        frame = { x = "90%", y = "10%", w = "8%", h = "20%" },
+        trackMouseDown = true, trackMouseUp = true, trackMouseEnterExit = true,
+    })
 
-    overlay:level(hs.canvas.windowLevels.overlay)
+    overlay:level(hs.canvas.windowLevels.floating)
     overlay:behavior(hs.canvas.windowBehaviors.canJoinAllSpaces)
 
     -- Map string IDs to numeric indices for element access
     local idMap = { bg = 1, lang = EL.lang, output = EL.output, enter = EL.enter, model = EL.model, close = EL.close }
 
     -- Mouse handler: click bg to pin, click labels to cycle settings, X to close
-    overlay:canvasMouseEvents(false, true, true, false)  -- mouseUp + enterExit
+    overlay:canvasMouseEvents(true, true, true, false)  -- mouseDown + mouseUp + enterExit
     overlay:mouseCallback(function(canvas, event, id, mx, my)
+        -- Close button — deferred to avoid deleting canvas inside its own callback
+        if id == "close" and event == "mouseUp" then
+            hs.timer.doAfter(0.01, function()
+                if isRecording then emergencyStop() else forceHideOverlay() end
+            end)
+            return
+        end
+
         if event == "mouseUp" then
             if id == "bg" then
                 overlayPinned = not overlayPinned
@@ -643,12 +651,6 @@ local function createOverlay()
                     log("overlay unpinned")
                     if not isRecording then hideOverlay() end
                 end
-                return
-            end
-
-            if id == "close" then
-                overlayPinned = false
-                if isRecording then emergencyStop() else hideOverlay() end
                 return
             end
 
