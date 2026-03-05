@@ -51,11 +51,12 @@ end
 
 return {
     beforeInsert = function(ctx)
-        -- "note: buy coffee" -> append to daily notes, skip insertion
-        local note = ctx.textLower:match("^note:%s*(.+)$")
+        -- "note buy coffee" -> append to daily notes, skip insertion
+        -- Whisper may transcribe as "Note: buy coffee", "Note, buy coffee", etc.
+        local note = ctx.textLower:match("^note[%s%p]+(.+)$")
         if note then
             -- Use original-case text for the note content
-            local origNote = ctx.text:match("^%w+:%s*(.+)$")
+            local origNote = ctx.text:match("^%w+[%s%p]+(.+)$")
             ctx:appendToFile(dailyFile("notes"), "- " .. (origNote or note))
             ctx:disableInsert()
             ctx:notify("Saved note")
@@ -63,10 +64,10 @@ return {
             return
         end
 
-        -- "journal: today was productive" -> append to daily journal
-        local journal = ctx.textLower:match("^journal:%s*(.+)$")
+        -- "journal today was productive" -> append to daily journal
+        local journal = ctx.textLower:match("^journal[%s%p]+(.+)$")
         if journal then
-            local origJournal = ctx.text:match("^%w+:%s*(.+)$")
+            local origJournal = ctx.text:match("^%w+[%s%p]+(.+)$")
             ctx:appendToFile(dailyFile("journal"), origJournal or journal)
             ctx:disableInsert()
             ctx:notify("Saved journal entry")
@@ -85,12 +86,12 @@ return {
     end,
 
     actions = {
-        -- "todo: call mom" -> append to daily tasks
+        -- "todo call mom" -> append to daily tasks
         {
             name = "todo-to-file",
-            pattern = "^todo:%s*(.+)$",
+            pattern = "^todo[%s%p]+(.+)$",
             run = function(ctx)
-                local task = ctx.text:match("^%w+:%s*(.+)$")
+                local task = ctx.text:match("^%w+[%s%p]+(.+)$")
                 if task then
                     ctx:appendToFile(dailyFile("tasks"), "- [ ] " .. task)
                     ctx:disableInsert()
