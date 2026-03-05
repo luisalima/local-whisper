@@ -751,13 +751,18 @@ local function createOverlay()
     -- Mouse handler: click bg to pin, click labels to cycle settings, X to close
     overlay:canvasMouseEvents(true, true, true, false)  -- mouseDown + mouseUp + enterExit
     overlay:mouseCallback(function(canvas, event, id, mx, my)
-        -- Close button — deferred to avoid deleting canvas inside its own callback
-        if id == "close" and (event == "mouseUp" or event == "mouseDown") then
-            log("overlay: X clicked (" .. event .. ")")
-            if event == "mouseUp" then
+        -- Close button — hide immediately, delete deferred
+        if id == "close" then
+            if event == "mouseDown" then
+                log("overlay: X close")
+                canvas:hide()
                 hs.timer.doAfter(0.01, function()
-                    log("overlay: X executing close")
-                    if isRecording then emergencyStop() else forceHideOverlay() end
+                    overlayPinned = false
+                    if isRecording then
+                        emergencyStop()
+                    else
+                        if overlay then overlay:delete(); overlay = nil end
+                    end
                 end)
             end
             return
