@@ -82,7 +82,7 @@ local REFINE_PROMPT_FILE = CONFIG_DIR .. "/refine_prompt"
 local REFINE_MODEL_FILE = CONFIG_DIR .. "/refine_model"
 local REFINE_DEFAULT_MODEL = "llama3.1:8b"
 local REFINE_MIN_CHARS = 50  -- skip refinement for short text
-local REFINE_DEFAULT_PROMPT = "Clean up this dictated speech for insertion as text. Fix punctuation and capitalization. Remove filler words. If it contains a numbered list (one/two/three or 1/2/3), format as a numbered list with newlines. Do NOT add any commentary or explanation. Output ONLY the cleaned text."
+local REFINE_DEFAULT_PROMPT = "Clean up this dictated speech for insertion as text. Fix punctuation and capitalization. Remove filler words (um, uh, like, you know, so, well, I mean). If the text contains a numbered list or sequential items (first/second/third, one/two/three, 1/2/3), format each item on its own line as a numbered list (1. item\\n2. item\\n3. item). Do NOT add any commentary, explanation, or preamble. Output ONLY the cleaned text, nothing else."
 
 local function getRefineModel()
     local f = io.open(REFINE_MODEL_FILE, "r")
