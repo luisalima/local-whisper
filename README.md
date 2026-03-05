@@ -1,6 +1,6 @@
 # local-whisper
 
-A fast, fully-local speech-to-text dictation tool for macOS, powered by [whisper.cpp](https://github.com/ggml-org/whisper.cpp). No subscriptions, no cloud — just local transcription optimized for Apple Silicon.
+A fast, fully-local speech-to-text dictation tool for macOS with voice commands, powered by [whisper.cpp](https://github.com/ggml-org/whisper.cpp). No subscriptions, no cloud — just local transcription optimized for Apple Silicon.
 
 Hold **Right Cmd**, speak, release — text appears at your cursor.
 
