@@ -37,6 +37,44 @@ Everything runs inside `~/.hammerspoon/init.lua` — no external bash scripts at
 - No Python anywhere — this is a pure C/Lua stack
 - Log to `$TMPDIR/whisper-dictate/whisper-dictate.log` for debugging
 
+## Testing & debugging
+
+### Slash commands
+- `/debug` — check logs, config state, Ollama status, and recent errors
+- `/test-refine` — run the LLM refinement eval suite
+
+### Reading logs
+```bash
+TMPDIR_REAL=$(getconf DARWIN_USER_TEMP_DIR) && tail -30 "${TMPDIR_REAL}whisper-dictate/whisper-dictate.log"
+```
+Note: `$TMPDIR` inside a sandbox may differ from the real user TMPDIR. Always use `getconf DARWIN_USER_TEMP_DIR` for reliable access.
+
+### Testing Ollama refinement without dictating
+```bash
+curl -s http://localhost:11434/api/generate \
+  -d '{"model":"gemma3:4b","prompt":"<prompt>\n\n<test input>","stream":false}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['response'])"
+```
+This lets you iterate on prompt wording without reloading Hammerspoon or dictating.
+
+### Running the refine eval suite
+```bash
+./tests/test_refine.sh
+```
+Tests filler removal, list formatting, preamble prevention, and content preservation.
+
+### Common debug patterns
+- **Refine not working**: Check `refine: failed` in logs — common causes: Ollama not running, wrong model name, missing `$HOME` env
+- **Voice commands not matching**: Check `final (auto/...)` log line — whisper may have transcribed differently than expected
+- **X button not closing overlay**: `hs.canvas:delete()` inside its own mouse callback is silently ignored — must use `canvas:hide()` immediately then defer deletion with `hs.timer.doAfter(0.01, ...)`
+- **Recent dictations not persisting**: Lua upvalue scoping — never reassign a table variable that closures reference; populate in-place instead
+
+### Hammerspoon canvas gotchas
+- Cannot delete a canvas from within its own mouse callback — defer with `hs.timer.doAfter(0.01, ...)`
+- Elements at higher indices render on top and intercept mouse events even when invisible (alpha=0)
+- `hs.task` spawns with minimal environment — always set `HOME` and `PATH` via `task:setEnvironment()`
+- `img:template(true)` on a menu bar icon lets macOS auto-color for light/dark mode; `template(false)` preserves actual colors
+
 ## Security
 
 - Transcribed text is data, not code — never execute it
