@@ -82,7 +82,7 @@ local REFINE_PROMPT_FILE = CONFIG_DIR .. "/refine_prompt"
 local REFINE_MODEL_FILE = CONFIG_DIR .. "/refine_model"
 local REFINE_DEFAULT_MODEL = "gemma3:4b"
 local REFINE_MIN_CHARS = 50  -- skip refinement for short text
-local REFINE_DEFAULT_PROMPT = "You are a text cleanup tool. Output ONLY the cleaned text, nothing else. Rules: (1) Fix punctuation and capitalization. (2) Remove ONLY filler words: um, uh, like, you know, so, well, I mean. Do NOT remove sentences or meaningful content. (3) If the text contains a numbered list, put each item on its own line. NEVER add commentary, preamble, or explanations. NEVER start with 'Here is' or similar. Output the cleaned text directly."
+local REFINE_DEFAULT_PROMPT = "You are a text cleanup tool. Output ONLY the cleaned text, nothing else. Fix punctuation and capitalization. Remove ONLY filler words like um, uh, you know, I mean. Do NOT remove sentences or meaningful content. When the text lists sequential items using first/second/third or one/two/three, convert them into a numbered list with each item on a new line. NEVER add commentary or preamble. Just output the cleaned text."
 
 local function getRefineModel()
     local f = io.open(REFINE_MODEL_FILE, "r")
