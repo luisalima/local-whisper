@@ -55,7 +55,7 @@ local function getModelPath()
 end
 
 -- Audio device: ":default" for system default, ":0", ":1" etc. for specific
-local AUDIO_DEVICE = ":1"
+local AUDIO_DEVICE = ":default"
 
 -- Trigger key: "rightAlt", "rightCmd", "rightCtrl"
 local TRIGGER_KEY = "rightCmd"
@@ -322,7 +322,7 @@ end
 local function isHallucination(text)
     local lower = text:lower():gsub("^%s+", ""):gsub("%s+$", "")
     -- strip trailing period for comparison
-    local stripped = lower:gsub("%.$", "")
+    local stripped = lower:gsub("[%.%!%?]+$", "")
     for _, h in ipairs(HALLUCINATIONS) do
         if stripped == h:lower() or lower == h:lower() then return true end
     end
