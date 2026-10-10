@@ -199,6 +199,36 @@ local function getLang()
     return "en"
 end
 
+-- Overlay status strings, matched to the dictation language so the card never
+-- mixes "Ouvindo..." with "Transcribing..." mid-session. "auto" defaults to pt.
+local STATUS_TEXT = {
+    pt = {
+        settings = "Clique nos rótulos pra mudar as configurações",
+        listening = "Ouvindo...",
+        refining = "Refinando...",
+        transcribing = "Transcrevendo...",
+        errorConcat = "Erro: falha ao concatenar áudio",
+        errorTranscribe = "Erro: falha na transcrição",
+        retranscribing = function(fallback) return "Retranscrevendo (" .. fallback:upper() .. ")..." end,
+    },
+    en = {
+        settings = "Click labels to change settings",
+        listening = "Listening...",
+        refining = "Refining...",
+        transcribing = "Transcribing...",
+        errorConcat = "Error: concat failed",
+        errorTranscribe = "Error: transcription failed",
+        retranscribing = function(fallback) return "Re-transcribing (" .. fallback:upper() .. ")..." end,
+    },
+}
+
+local function T(key, ...)
+    local tbl = STATUS_TEXT[getLang()] or STATUS_TEXT.pt
+    local v = tbl[key]
+    if type(v) == "function" then return v(...) end
+    return v
+end
+
 local function getOutputMode()
     local mode = readFile(OUTPUT_FILE):gsub("%s+", "")
     if mode == "type" then return "type" end
@@ -612,157 +642,235 @@ end
 --------------------------------------------------------------------------------
 
 local overlay = nil
-local btnColor = { red = 0.5, green = 0.8, blue = 1.0, alpha = 1.0 }
-local btnHover = { red = 0.7, green = 0.9, blue = 1.0, alpha = 1.0 }
+local overlayFadeTimer = nil
 
--- Element indices: 1=bg, 2=lang, 3=sep1, 4=output, 5=sep2, 6=enter, 7=sep3, 8=model, 9=sep4, 10=refine, 11=text, 12=dot, 13=timer, 14=close
-local EL = { lang = 2, output = 4, enter = 6, model = 8, refine = 10, text = 11, dot = 12, timer = 13, close = 14 }
+-- Element indices: 1=bg 2=langPill 3=lang 4=outputPill 5=output 6=enterPill 7=enter
+-- 8=refinePill 9=refine 10=modelPill 11=model 12=text 13=dotGlow 14=dot 15=timer 16=closeHover 17=close
+local EL = {
+    lang = 3, output = 5, enter = 7, refine = 9, model = 11, text = 12,
+    dotGlow = 13, dot = 14, timer = 15, closeHover = 16, close = 17,
+}
 
-local enterOnColor = { red = 0.3, green = 1.0, blue = 0.3, alpha = 1.0 }
-local enterOffColor = { red = 0.5, green = 0.5, blue = 0.5, alpha = 0.5 }
-local refineOnColor = { red = 0.4, green = 0.8, blue = 1.0, alpha = 1.0 }
-local refineOffColor = { red = 0.5, green = 0.5, blue = 0.5, alpha = 0.5 }
+-- Card geometry (grouped into one table to stay under Lua's 200-local cap)
+local OV = { W = 440, H = 118, PAD = 18, ROWY = 14, ROWH = 26 }
+OV.DOT_CX = OV.PAD + 5
+OV.DOT_CY = OV.H - 21
+
+-- Palette + font (grouped into one table for the same reason)
+local STYLE = {
+    font = ".AppleSystemUIFont",
+    label = { red = 0.58, green = 0.66, blue = 0.78, alpha = 0.9 },
+    labelHover = { red = 0.8, green = 0.86, blue = 0.95, alpha = 1.0 },
+    enterOn = { red = 0.42, green = 0.88, blue = 0.58, alpha = 1.0 },
+    enterOnBg = { red = 0.42, green = 0.88, blue = 0.58, alpha = 0.16 },
+    refineOn = { red = 0.45, green = 0.72, blue = 1.0, alpha = 1.0 },
+    refineOnBg = { red = 0.45, green = 0.72, blue = 1.0, alpha = 0.16 },
+    offColor = { red = 1, green = 1, blue = 1, alpha = 0.4 },
+    offBg = { red = 1, green = 1, blue = 1, alpha = 0.0 },
+    offStroke = { red = 1, green = 1, blue = 1, alpha = 0.12 },
+    chipBg = { red = 1, green = 1, blue = 1, alpha = 0.05 },
+    chipHoverBg = { red = 1, green = 1, blue = 1, alpha = 0.11 },
+    chipStroke = { red = 1, green = 1, blue = 1, alpha = 0.08 },
+}
+
+-- Fade + slide tween shared by show/hide (cancels any animation already in flight)
+local function stopOverlayAnim()
+    if overlayFadeTimer then overlayFadeTimer:stop(); overlayFadeTimer = nil end
+end
+
+local function animateOverlay(fromY, toY, fromAlpha, toAlpha, duration, onDone)
+    stopOverlayAnim()
+    local steps = 8
+    local i = 0
+    overlayFadeTimer = hs.timer.doEvery(duration / steps, function()
+        if not overlay then stopOverlayAnim(); return end
+        i = i + 1
+        local t = i / steps
+        local f = overlay:frame()
+        f.y = fromY + (toY - fromY) * t
+        overlay:frame(f)
+        overlay:alpha(fromAlpha + (toAlpha - fromAlpha) * t)
+        if i >= steps then
+            stopOverlayAnim()
+            if onDone then onDone() end
+        end
+    end)
+end
 
 local function refreshOverlayLabels()
     if not overlay then return end
     overlay[EL.lang].text = getLang():upper()
     overlay[EL.output].text = getOutputMode():upper()
+
+    local enterOn = getEnterMode()
     overlay[EL.enter].text = "⏎"
-    overlay[EL.enter].textColor = getEnterMode() and enterOnColor or enterOffColor
+    overlay[EL.enter].textColor = enterOn and STYLE.enterOn or STYLE.offColor
+    overlay[EL.enter - 1].action = enterOn and "fill" or "strokeAndFill"
+    overlay[EL.enter - 1].fillColor = enterOn and STYLE.enterOnBg or STYLE.offBg
+    overlay[EL.enter - 1].strokeColor = STYLE.offStroke
+
     overlay[EL.model].text = getModelName()
+
     local refineOn = getRefineMode() and hasOllama()
-    overlay[EL.refine].text = refineOn and "refine ✓" or "refine ✗"
-    overlay[EL.refine].textColor = refineOn and refineOnColor or refineOffColor
+    overlay[EL.refine].text = "Refine"
+    overlay[EL.refine].textColor = refineOn and STYLE.refineOn or STYLE.offColor
+    overlay[EL.refine - 1].action = refineOn and "fill" or "strokeAndFill"
+    overlay[EL.refine - 1].fillColor = refineOn and STYLE.refineOnBg or STYLE.offBg
+    overlay[EL.refine - 1].strokeColor = STYLE.offStroke
 end
 
 local function createOverlay()
     local screen = hs.screen.mainScreen()
     local frame = screen:frame()
-    local width, height = 420, 100
+    local width, height = OV.W, OV.H
+    local pad, rowY, rowH = OV.PAD, OV.ROWY, OV.ROWH
     local padding = 20
     local x = frame.x + frame.w - width - padding
     local y = frame.y + frame.h - height - padding - 50
 
     overlay = hs.canvas.new({ x = x, y = y, w = width, h = height })
 
-    -- 1: Background (click to pin overlay open)
+    -- 1: Background card (click to pin overlay open)
     overlay:appendElements({
         id = "bg",
-        type = "rectangle", action = "fill",
-        roundedRectRadii = { xRadius = 10, yRadius = 10 },
-        fillColor = { red = 0.1, green = 0.1, blue = 0.1, alpha = 0.85 },
+        type = "rectangle", action = "strokeAndFill",
+        roundedRectRadii = { xRadius = 16, yRadius = 16 },
+        fillGradient = "linear",
+        fillGradientColors = {
+            { red = 0.15, green = 0.15, blue = 0.19, alpha = 0.95 },
+            { red = 0.07, green = 0.07, blue = 0.09, alpha = 0.95 },
+        },
+        fillGradientAngle = 90,
+        strokeColor = { red = 1, green = 1, blue = 1, alpha = 0.08 },
+        strokeWidth = 1,
+        shadow = { blurRadius = 16, offset = { h = -4, w = 0 }, color = { alpha = 0.5 } },
         trackMouseUp = true,
     })
 
-    -- Clickable status labels (each cycles on click)
-    local sepColor = { red = 0.4, green = 0.4, blue = 0.4, alpha = 1 }
-
-    -- 2: Language
+    -- 2/3: Language chip
     overlay:appendElements({
-        id = "lang", type = "text", text = getLang():upper(),
-        textColor = btnColor, textSize = 11,
-        frame = { x = "4%", y = "6%", w = "10%", h = "25%" },
+        id = "lang", type = "rectangle", action = "fill",
+        roundedRectRadii = { xRadius = rowH / 2, yRadius = rowH / 2 },
+        fillColor = STYLE.chipBg, strokeColor = STYLE.chipStroke, strokeWidth = 1,
+        frame = { x = pad, y = rowY, w = 50, h = rowH },
         trackMouseUp = true, trackMouseEnterExit = true,
     })
-    -- 3: Separator
     overlay:appendElements({
-        id = "sep1", type = "text", text = "|",
-        textColor = sepColor, textSize = 11,
-        frame = { x = "13%", y = "6%", w = "2%", h = "25%" },
+        id = "lang", type = "text", text = getLang():upper(), textAlignment = "center",
+        textColor = STYLE.label, textSize = 11, textFont = STYLE.font,
+        frame = { x = pad, y = rowY + 6, w = 50, h = rowH - 6 },
     })
-    -- 4: Output mode
+    -- 4/5: Output-mode chip
     overlay:appendElements({
-        id = "output", type = "text", text = getOutputMode():upper(),
-        textColor = btnColor, textSize = 11,
-        frame = { x = "15%", y = "6%", w = "13%", h = "25%" },
+        id = "output", type = "rectangle", action = "fill",
+        roundedRectRadii = { xRadius = rowH / 2, yRadius = rowH / 2 },
+        fillColor = STYLE.chipBg, strokeColor = STYLE.chipStroke, strokeWidth = 1,
+        frame = { x = pad + 58, y = rowY, w = 74, h = rowH },
         trackMouseUp = true, trackMouseEnterExit = true,
     })
-    -- 5: Separator
     overlay:appendElements({
-        id = "sep2", type = "text", text = "|",
-        textColor = sepColor, textSize = 11,
-        frame = { x = "27%", y = "6%", w = "2%", h = "25%" },
+        id = "output", type = "text", text = getOutputMode():upper(), textAlignment = "center",
+        textColor = STYLE.label, textSize = 11, textFont = STYLE.font,
+        frame = { x = pad + 58, y = rowY + 6, w = 74, h = rowH - 6 },
     })
-    -- 6: Enter mode (⏎ green=on, gray=off)
+    -- 6/7: Enter-mode chip (⏎, green=on, dim=off)
     overlay:appendElements({
-        id = "enter", type = "text", text = "⏎",
-        textColor = getEnterMode() and enterOnColor or enterOffColor, textSize = 11,
-        frame = { x = "29%", y = "6%", w = "5%", h = "25%" },
+        id = "enter", type = "rectangle", action = "fill",
+        roundedRectRadii = { xRadius = rowH / 2, yRadius = rowH / 2 },
+        fillColor = getEnterMode() and STYLE.enterOnBg or STYLE.offBg,
+        strokeColor = STYLE.offStroke, strokeWidth = 1,
+        frame = { x = pad + 140, y = rowY, w = 36, h = rowH },
         trackMouseUp = true, trackMouseEnterExit = true,
     })
-    -- 7: Separator
     overlay:appendElements({
-        id = "sep3", type = "text", text = "|",
-        textColor = sepColor, textSize = 11,
-        frame = { x = "34%", y = "6%", w = "2%", h = "25%" },
+        id = "enter", type = "text", text = "⏎", textAlignment = "center",
+        textColor = getEnterMode() and STYLE.enterOn or STYLE.offColor, textSize = 13, textFont = STYLE.font,
+        frame = { x = pad + 140, y = rowY + 4, w = 36, h = rowH - 4 },
     })
-    -- 8: Model
+    -- 8/9: Refine chip
     overlay:appendElements({
-        id = "model", type = "text", text = getModelName(),
-        textColor = btnColor, textSize = 11,
-        frame = { x = "36%", y = "6%", w = "20%", h = "25%" },
+        id = "refine", type = "rectangle", action = "fill",
+        roundedRectRadii = { xRadius = rowH / 2, yRadius = rowH / 2 },
+        fillColor = (getRefineMode() and hasOllama()) and STYLE.refineOnBg or STYLE.offBg,
+        strokeColor = STYLE.offStroke, strokeWidth = 1,
+        frame = { x = pad + 184, y = rowY, w = 70, h = rowH },
         trackMouseUp = true, trackMouseEnterExit = true,
     })
-    -- 9: Separator
     overlay:appendElements({
-        id = "sep4", type = "text", text = "|",
-        textColor = sepColor, textSize = 11,
-        frame = { x = "54%", y = "6%", w = "2%", h = "25%" },
+        id = "refine", type = "text", text = "Refine", textAlignment = "center",
+        textColor = (getRefineMode() and hasOllama()) and STYLE.refineOn or STYLE.offColor, textSize = 11, textFont = STYLE.font,
+        frame = { x = pad + 184, y = rowY + 6, w = 70, h = rowH - 6 },
     })
-    -- 10: LLM refine toggle
+    -- 10/11: Model chip (right-aligned block)
+    local modelX, modelW = pad + 262, width - 44 - (pad + 262)
     overlay:appendElements({
-        id = "refine", type = "text",
-        text = (getRefineMode() and hasOllama()) and "refine ✓" or "refine ✗",
-        textColor = (getRefineMode() and hasOllama()) and refineOnColor or refineOffColor,
-        textSize = 11,
-        frame = { x = "57%", y = "6%", w = "18%", h = "25%" },
+        id = "model", type = "rectangle", action = "fill",
+        roundedRectRadii = { xRadius = rowH / 2, yRadius = rowH / 2 },
+        fillColor = STYLE.chipBg, strokeColor = STYLE.chipStroke, strokeWidth = 1,
+        frame = { x = modelX, y = rowY, w = modelW, h = rowH },
         trackMouseUp = true, trackMouseEnterExit = true,
     })
-    -- 11: Transcript text
     overlay:appendElements({
-        id = "text", type = "text", text = "Listening...",
-        textColor = { red = 1, green = 1, blue = 1, alpha = 1.0 },
-        textSize = 14,
-        frame = { x = "5%", y = "35%", w = "90%", h = "60%" },
+        id = "model", type = "text", text = getModelName(), textAlignment = "center",
+        textColor = STYLE.label, textSize = 11, textFont = STYLE.font,
+        frame = { x = modelX, y = rowY + 6, w = modelW, h = rowH - 6 },
     })
-    -- 12: Recording indicator (pulsing red dot)
+    -- 12: Transcript / status text
+    overlay:appendElements({
+        id = "text", type = "text", text = T("listening"),
+        textColor = { red = 1, green = 1, blue = 1, alpha = 0.92 },
+        textSize = 15, textFont = STYLE.font .. "Bold",
+        frame = { x = pad, y = 52, w = width - pad * 2, h = 36 },
+    })
+    -- 13: Recording glow (breathing halo behind the dot)
+    overlay:appendElements({
+        id = "dotGlow", type = "oval", action = "fill",
+        fillColor = { red = 1, green = 0.15, blue = 0.15, alpha = 0.0 },
+        frame = { x = OV.DOT_CX - 7, y = OV.DOT_CY - 7, w = 14, h = 14 },
+    })
+    -- 14: Recording indicator (pulsing dot)
     overlay:appendElements({
         id = "dot", type = "oval", action = "fill",
         fillColor = { red = 1, green = 0.15, blue = 0.15, alpha = 0.0 },
-        frame = { x = "89%", y = "8%", w = "3%", h = "12%" },
+        frame = { x = OV.DOT_CX - 5, y = OV.DOT_CY - 5, w = 10, h = 10 },
     })
-    -- 13: Elapsed time display
+    -- 15: Elapsed time display
     overlay:appendElements({
         id = "timer", type = "text", text = "",
         textColor = { red = 1, green = 0.4, blue = 0.4, alpha = 0.0 },
-        textSize = 10,
-        frame = { x = "75%", y = "8%", w = "14%", h = "20%" },
-        textAlignment = "right",
+        textSize = 10, textFont = STYLE.font,
+        frame = { x = pad + 16, y = height - 29, w = 80, h = 16 },
     })
-    -- 14: Close button (X) — last element so it's on top and clickable
+    -- 16: Close hover halo (behind the ✕, lit up on mouseEnter)
     overlay:appendElements({
-        id = "close", type = "text", text = "✕",
-        textColor = { red = 1, green = 0.4, blue = 0.4, alpha = 0.8 },
-        textSize = 16, textAlignment = "center",
-        frame = { x = "90%", y = "10%", w = "8%", h = "20%" },
+        id = "close", type = "oval", action = "fill",
+        fillColor = { red = 1, green = 1, blue = 1, alpha = 0.0 },
+        frame = { x = width - 34, y = 6, w = 22, h = 22 },
+    })
+    -- 17: Close button (✕) — last element so it's on top and clickable
+    overlay:appendElements({
+        id = "close", type = "text", text = "✕", textAlignment = "center",
+        textColor = { red = 1, green = 1, blue = 1, alpha = 0.45 },
+        textSize = 14, textFont = STYLE.font,
+        frame = { x = width - 34, y = 10, w = 22, h = 18 },
         trackMouseDown = true, trackMouseUp = true, trackMouseEnterExit = true,
     })
 
     overlay:level(hs.canvas.windowLevels.floating)
     overlay:behavior(hs.canvas.windowBehaviors.canJoinAllSpaces)
 
-    -- Map string IDs to numeric indices for element access
+    -- Map string IDs to the element whose color should react to hover
     local idMap = { bg = 1, lang = EL.lang, output = EL.output, enter = EL.enter, model = EL.model, refine = EL.refine, close = EL.close }
 
     -- Mouse handler: click bg to pin, click labels to cycle settings, X to close
     overlay:canvasMouseEvents(true, true, true, false)  -- mouseDown + mouseUp + enterExit
     overlay:mouseCallback(function(canvas, event, id, mx, my)
-        -- Close button — hide immediately, delete deferred
+        -- Close button — fade+slide out, delete deferred
         if id == "close" then
             if event == "mouseDown" then
                 log("overlay: X close")
-                canvas:hide()
-                hs.timer.doAfter(0.01, function()
+                local f = canvas:frame()
+                animateOverlay(f.y, f.y + 10, 1, 0, 0.12, function()
                     overlayPinned = false
                     if isRecording then
                         emergencyStop()
@@ -770,6 +878,12 @@ local function createOverlay()
                         if overlay then overlay:delete(); overlay = nil end
                     end
                 end)
+            elseif event == "mouseEnter" then
+                canvas[EL.closeHover].fillColor = { red = 1, green = 1, blue = 1, alpha = 0.1 }
+                canvas[EL.close].textColor = { red = 1, green = 0.4, blue = 0.4, alpha = 1 }
+            elseif event == "mouseExit" then
+                canvas[EL.closeHover].fillColor = { red = 1, green = 1, blue = 1, alpha = 0.0 }
+                canvas[EL.close].textColor = { red = 1, green = 1, blue = 1, alpha = 0.45 }
             end
             return
         end
@@ -778,10 +892,10 @@ local function createOverlay()
             if id == "bg" then
                 overlayPinned = not overlayPinned
                 if overlayPinned then
-                    canvas[1].fillColor = { red = 0.15, green = 0.15, blue = 0.2, alpha = 0.92 }
+                    canvas[1].fillColor = { red = 0.18, green = 0.18, blue = 0.23, alpha = 0.97 }
                     log("overlay pinned")
                 else
-                    canvas[1].fillColor = { red = 0.1, green = 0.1, blue = 0.1, alpha = 0.85 }
+                    canvas[1].fillColor = { red = 0.1, green = 0.1, blue = 0.1, alpha = 0.95 }
                     log("overlay unpinned")
                     if not isRecording then hideOverlay() end
                 end
@@ -799,47 +913,60 @@ local function createOverlay()
         elseif event == "mouseEnter" then
             local idx = idMap[id]
             if not idx or id == "bg" then return end
-            if id == "close" then
-                canvas[idx].textColor = { red = 1, green = 0.3, blue = 0.3, alpha = 1 }
-            elseif id == "enter" then
-                canvas[idx].textColor = enterOnColor
+            if id == "enter" then
+                canvas[idx].textColor = STYLE.enterOn
             elseif id == "refine" then
-                canvas[idx].textColor = refineOnColor
+                canvas[idx].textColor = STYLE.refineOn
             else
-                canvas[idx].textColor = btnHover
+                canvas[idx].textColor = STYLE.labelHover
+                canvas[idx - 1].fillColor = STYLE.chipHoverBg
             end
 
         elseif event == "mouseExit" then
             local idx = idMap[id]
             if not idx or id == "bg" then return end
-            if id == "close" then
-                canvas[idx].textColor = { red = 1, green = 1, blue = 1, alpha = 0.5 }
-            elseif id == "enter" then
-                canvas[idx].textColor = getEnterMode() and enterOnColor or enterOffColor
+            if id == "enter" then
+                canvas[idx].textColor = getEnterMode() and STYLE.enterOn or STYLE.offColor
             elseif id == "refine" then
-                canvas[idx].textColor = (getRefineMode() and hasOllama()) and refineOnColor or refineOffColor
+                canvas[idx].textColor = (getRefineMode() and hasOllama()) and STYLE.refineOn or STYLE.offColor
             else
-                canvas[idx].textColor = btnColor
+                canvas[idx].textColor = STYLE.label
+                canvas[idx - 1].fillColor = STYLE.chipBg
             end
         end
     end)
 end
 
 local function showOverlay()
+    stopOverlayAnim()
     overlayPinned = false
     if overlay then overlay:delete() end
     createOverlay()
+    local f = overlay:frame()
+    local targetY = f.y
+    f.y = targetY + 10
+    overlay:frame(f)
+    overlay:alpha(0)
     overlay:show()
+    animateOverlay(targetY + 10, targetY, 0, 1, 0.16)
 end
 
 local function hideOverlay()
     if overlayPinned then return end  -- pinned overlay stays open
-    if overlay then overlay:delete(); overlay = nil end
+    if not overlay then return end
+    local f = overlay:frame()
+    animateOverlay(f.y, f.y + 10, 1, 0, 0.14, function()
+        if overlay then overlay:delete(); overlay = nil end
+    end)
 end
 
 local function forceHideOverlay()
     overlayPinned = false
-    if overlay then overlay:delete(); overlay = nil end
+    if not overlay then return end
+    local f = overlay:frame()
+    animateOverlay(f.y, f.y + 10, 1, 0, 0.14, function()
+        if overlay then overlay:delete(); overlay = nil end
+    end)
 end
 
 local function setOverlayText(text)
@@ -1032,7 +1159,7 @@ local function buildMenuBarMenu()
                 showOverlay()
                 overlayPinned = true
                 overlay[1].fillColor = { red = 0.15, green = 0.15, blue = 0.2, alpha = 0.92 }
-                setOverlayText("Click labels to change settings")
+                setOverlayText(T("settings"))
             end
         end,
     })
@@ -1103,7 +1230,7 @@ local function startRecordingIndicator()
     overlay[EL.dot].fillColor = { red = 1, green = 0.15, blue = 0.15, alpha = 1.0 }
     overlay[EL.timer].textColor = { red = 1, green = 0.4, blue = 0.4, alpha = 1.0 }
 
-    -- Pulse the red dot
+    -- Pulse the red dot, and breathe a soft halo behind it on the same cycle
     pulseTimer = hs.timer.doEvery(0.05, function()
         if not overlay then return end
         if pulseFading then
@@ -1114,6 +1241,9 @@ local function startRecordingIndicator()
             if pulseAlpha >= 1.0 then pulseFading = true end
         end
         overlay[EL.dot].fillColor = { red = 1, green = 0.15, blue = 0.15, alpha = pulseAlpha }
+        local r = 7 + (pulseAlpha - 0.2) / 0.8 * 6
+        overlay[EL.dotGlow].frame = { x = OV.DOT_CX - r, y = OV.DOT_CY - r, w = r * 2, h = r * 2 }
+        overlay[EL.dotGlow].fillColor = { red = 1, green = 0.15, blue = 0.15, alpha = pulseAlpha * 0.25 }
     end)
 
     -- Update elapsed time every second
@@ -1131,6 +1261,7 @@ local function stopRecordingIndicator()
     if clockTimer then clockTimer:stop(); clockTimer = nil end
     if overlay then
         overlay[EL.dot].fillColor = { red = 1, green = 0.15, blue = 0.15, alpha = 0.0 }
+        overlay[EL.dotGlow].fillColor = { red = 1, green = 0.15, blue = 0.15, alpha = 0.0 }
         overlay[EL.timer].textColor = { red = 1, green = 0.4, blue = 0.4, alpha = 0.0 }
         overlay[EL.timer].text = ""
     end
@@ -1296,7 +1427,7 @@ local function insertTranscribedText(text, detectedLang)
 
     -- Optional LLM refinement (async, skips short text and voice commands)
     if not isVoiceCommand and getRefineMode() and #text >= REFINE_MIN_CHARS then
-        setOverlayText("Refining...")
+        setOverlayText(T("refining"))
         refineWithOllama(text, function(refined)
             finishInsertion(refined, detectedLang)
         end)
@@ -1313,7 +1444,7 @@ local function doFinalTranscription()
         return
     end
 
-    setOverlayText("Transcribing...")
+    setOverlayText(T("transcribing"))
 
     local concatFile = WHISPER_TMP .. "/concat.txt"
     local f = io.open(concatFile, "w")
@@ -1329,7 +1460,7 @@ local function doFinalTranscription()
     local concatTask = hs.task.new(FFMPEG, function(code)
         if code ~= 0 then
             log("final: concat failed")
-            setOverlayText("Error: concat failed")
+            setOverlayText(T("errorConcat"))
             hs.timer.doAfter(2, hideOverlay)
             return
         end
@@ -1343,7 +1474,7 @@ local function doFinalTranscription()
             local whisperTask = hs.task.new(WHISPER_BIN, function(code2, out2, err2)
                 if code2 ~= 0 then
                     log("final: whisper failed")
-                    setOverlayText("Error: transcription failed")
+                    setOverlayText(T("errorTranscribe"))
                     hs.timer.doAfter(2, hideOverlay)
                     return
                 end
@@ -1367,13 +1498,13 @@ local function doFinalTranscription()
                     -- Detected language not in preferred list — re-transcribe with first preferred
                     local fallback = preferred[1]
                     log("auto-detect got '" .. tostring(detected) .. "', re-running with " .. fallback)
-                    setOverlayText("Re-transcribing (" .. fallback:upper() .. ")...")
+                    setOverlayText(T("retranscribing", fallback))
                     local retryArgs = { "-m", getModelPath(), "-f", finalWav, "-l", fallback, "-nt", "--no-prints" }
                     for _, a in ipairs(promptArgs) do table.insert(retryArgs, a) end
                     local retryTask = hs.task.new(WHISPER_BIN, function(code3, out3)
                         if code3 ~= 0 then
                             log("final: retry whisper failed")
-                            setOverlayText("Error: transcription failed")
+                            setOverlayText(T("errorTranscribe"))
                             hs.timer.doAfter(2, hideOverlay)
                             return
                         end
@@ -1392,7 +1523,7 @@ local function doFinalTranscription()
             local whisperTask = hs.task.new(WHISPER_BIN, function(code2, out2)
                 if code2 ~= 0 then
                     log("final: whisper failed")
-                    setOverlayText("Error: transcription failed")
+                    setOverlayText(T("errorTranscribe"))
                     hs.timer.doAfter(2, hideOverlay)
                     return
                 end
@@ -1512,11 +1643,10 @@ end
 -- Key detection (replaces Karabiner)
 --------------------------------------------------------------------------------
 
--- Map trigger key to generic modifier name for polling
-local GENERIC_MOD = { rightAlt = "alt", rightCmd = "cmd", rightCtrl = "ctrl" }
-local genericMod = GENERIC_MOD[TRIGGER_KEY]
-
-local releasePoller = nil
+-- Toggle mode: press the trigger key to start recording, press it again to stop.
+-- No need to hold it down — keyIsDown just tracks press/release edges so a
+-- single physical press toggles once (flagsChanged fires on both down and up).
+local keyIsDown = false
 
 -- Global so we can inspect state via hs -c
 _whisper = { modTap = nil, recording = false }
@@ -1527,21 +1657,15 @@ local modTap = hs.eventtap.new({ hs.eventtap.event.types.flagsChanged }, functio
         local rawFlags = event:rawFlags()
         local triggered = (rawFlags & triggerMask) > 0
 
-        if triggered and not isRecording then
-            startRecording()
-            -- Poll for release since flagsChanged doesn't fire on key-up
-            if releasePoller then releasePoller:stop() end
-            releasePoller = hs.timer.doEvery(0.1, function()
-                local mods = hs.eventtap.checkKeyboardModifiers()
-                if not mods[genericMod] then
-                    releasePoller:stop()
-                    releasePoller = nil
-                    stopRecording()
-                end
-            end)
-        elseif not triggered and isRecording then
-            if releasePoller then releasePoller:stop(); releasePoller = nil end
-            stopRecording()
+        if triggered and not keyIsDown then
+            keyIsDown = true
+            if isRecording then
+                stopRecording()
+            else
+                startRecording()
+            end
+        elseif not triggered and keyIsDown then
+            keyIsDown = false
         end
     end)
     if not ok then log("eventtap error: " .. tostring(err)) end
@@ -2494,5 +2618,5 @@ local actionsFlag = actionsEnabled and " +actions" or ""
 log("loaded (trigger=" .. TRIGGER_KEY .. ", lang=" .. getLang() .. ", output=" .. getOutputMode() .. ", model=" .. getModelName() .. ", preferred=" .. table.concat(getPreferredLangs(), ",") .. ")")
 hs.notify.new({
     title = "local-whisper",
-    informativeText = "Loaded (" .. getLang():upper() .. " / " .. getOutputMode():upper() .. enterStatus .. " / " .. getModelName() .. actionsFlag .. ") — hold " .. TRIGGER_KEY
+    informativeText = "Loaded (" .. getLang():upper() .. " / " .. getOutputMode():upper() .. enterStatus .. " / " .. getModelName() .. actionsFlag .. ") — press " .. TRIGGER_KEY .. " to start/stop"
 }):send()
